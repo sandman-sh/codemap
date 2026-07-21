@@ -1,11 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm build",
+  "framework": "vite",
+  "buildCommand": "pnpm --filter @codemapai/web build",
   "outputDirectory": "apps/web/dist/public",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
