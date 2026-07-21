@@ -1,0 +1,454 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: CodeMapAI API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: repo
+    description: Repository operations
+  - name: ai
+    description: AI operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /repo/fetch:
+    post:
+      operationId: fetchRepo
+      tags: [repo]
+      summary: Fetch repository structure
+      description: Fetches and parses the structure of a GitHub repository or processes uploaded ZIP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FetchRepoRequest"
+      responses:
+        "200":
+          description: Repository structure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoStructure"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /repo/upload:
+    post:
+      operationId: uploadZip
+      tags: [repo]
+      summary: Upload ZIP file
+      description: Upload a ZIP file containing a codebase
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+                - file
+      responses:
+        "200":
+          description: Repository structure extracted from ZIP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoStructure"
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/explain-node:
+    post:
+      operationId: explainNode
+      tags: [ai]
+      summary: Explain a code node
+      description: Get an AI explanation for a file or code element
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExplainNodeRequest"
+      responses:
+        "200":
+          description: AI explanation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplainNodeResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/explain-flow:
+    post:
+      operationId: explainFlow
+      tags: [ai]
+      summary: Explain data flow between nodes
+      description: Generate step-by-step explanation of data flow between selected nodes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExplainFlowRequest"
+      responses:
+        "200":
+          description: Flow explanation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplainFlowResponse"
+
+  /ai/learning-path:
+    post:
+      operationId: getLearningPath
+      tags: [ai]
+      summary: Get suggested learning path
+      description: Get AI-suggested order to understand the codebase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearningPathRequest"
+      responses:
+        "200":
+          description: Learning path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearningPathResponse"
+
+  /ai/ask:
+    post:
+      operationId: askCodebase
+      tags: [ai]
+      summary: Ask a question about the codebase
+      description: Ask any question about the codebase and get AI answers with node references
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskCodebaseRequest"
+      responses:
+        "200":
+          description: Answer with node references
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AskCodebaseResponse"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
+
+    FetchRepoRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          description: GitHub repository URL
+        branch:
+          type: string
+          description: Branch to fetch (defaults to main/master)
+      required:
+        - url
+
+    CodeNode:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [root, folder, file, function, class, export]
+        path:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeNode"
+        language:
+          type: string
+        size:
+          type: integer
+        complexity:
+          type: string
+          enum: [low, medium, high]
+        isEntryPoint:
+          type: boolean
+      required:
+        - id
+        - name
+        - type
+        - path
+
+    RepoStructure:
+      type: object
+      properties:
+        repoName:
+          type: string
+        rootNode:
+          $ref: "#/components/schemas/CodeNode"
+        fileCount:
+          type: integer
+        languages:
+          type: array
+          items:
+            type: string
+        entryPoints:
+          type: array
+          items:
+            type: string
+        totalSize:
+          type: integer
+      required:
+        - repoName
+        - rootNode
+        - fileCount
+        - languages
+
+    ExplainNodeRequest:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        nodeName:
+          type: string
+        nodePath:
+          type: string
+        nodeType:
+          type: string
+        repoName:
+          type: string
+        repoContext:
+          type: string
+          description: Brief description of the full repo structure for context
+        content:
+          type: string
+          description: Optional file content to explain
+      required:
+        - nodeId
+        - nodeName
+        - nodePath
+        - nodeType
+        - repoName
+
+    ExplainNodeResponse:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        what:
+          type: string
+          description: What this file/function does
+        why:
+          type: string
+          description: Why it exists
+        connections:
+          type: string
+          description: How it connects to other parts
+        complexity:
+          type: string
+          enum: [low, medium, high]
+        tips:
+          type: array
+          items:
+            type: string
+      required:
+        - nodeId
+        - what
+        - why
+        - connections
+
+    ExplainFlowRequest:
+      type: object
+      properties:
+        nodeIds:
+          type: array
+          items:
+            type: string
+        nodePaths:
+          type: array
+          items:
+            type: string
+        repoName:
+          type: string
+        repoContext:
+          type: string
+      required:
+        - nodeIds
+        - nodePaths
+        - repoName
+
+    ExplainFlowResponse:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlowStep"
+        summary:
+          type: string
+      required:
+        - steps
+        - summary
+
+    FlowStep:
+      type: object
+      properties:
+        stepNumber:
+          type: integer
+        nodeId:
+          type: string
+        nodePath:
+          type: string
+        description:
+          type: string
+        dataIn:
+          type: string
+        dataOut:
+          type: string
+      required:
+        - stepNumber
+        - description
+
+    LearningPathRequest:
+      type: object
+      properties:
+        repoName:
+          type: string
+        rootNode:
+          $ref: "#/components/schemas/CodeNode"
+        languages:
+          type: array
+          items:
+            type: string
+      required:
+        - repoName
+        - rootNode
+
+    LearningPathResponse:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/LearningStep"
+        summary:
+          type: string
+        estimatedTime:
+          type: string
+      required:
+        - steps
+        - summary
+
+    LearningStep:
+      type: object
+      properties:
+        order:
+          type: integer
+        nodeId:
+          type: string
+        nodePath:
+          type: string
+        reason:
+          type: string
+        concept:
+          type: string
+      required:
+        - order
+        - reason
+
+    AskCodebaseRequest:
+      type: object
+      properties:
+        question:
+          type: string
+        repoName:
+          type: string
+        repoContext:
+          type: string
+      required:
+        - question
+        - repoName
+
+    AskCodebaseResponse:
+      type: object
+      properties:
+        answer:
+          type: string
+        referencedNodeIds:
+          type: array
+          items:
+            type: string
+        referencedPaths:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: string
+          enum: [high, medium, low]
+      required:
+        - answer
+        - referencedNodeIds
+        - referencedPaths

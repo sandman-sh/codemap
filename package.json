@@ -1,0 +1,24 @@
+{
+  "name": "codemapai-workspace",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {
+    "preinstall": "node ./scripts/enforce-pnpm.mjs",
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "typecheck:packages": "tsc --build",
+    "typecheck": "pnpm run typecheck:packages && pnpm -r --filter \"./apps/**\" --if-present run typecheck",
+    "dev:web": "pnpm --filter @codemapai/web dev",
+    "dev:api": "pnpm --filter @codemapai/api dev",
+    "dev": "pnpm --filter @codemapai/api --filter @codemapai/web --parallel run dev",
+    "test": "pnpm -r --if-present run test",
+    "vercel-build": "pnpm build"
+  },
+  "private": true,
+  "devDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.62.2",
+    "@tailwindcss/oxide-win32-x64-msvc": "^4.3.3",
+    "lightningcss-win32-x64-msvc": "^1.33.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
+  }
+}
