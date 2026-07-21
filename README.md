@@ -104,7 +104,7 @@ CodeMapAI is engineered as a high-performance **pnpm monorepo**:
 ### 1. Clone & Install
 ```bash
 git clone https://github.com/sandman-sh/codemap.git
-cd codemap
+cd codemaap
 pnpm install
 ```
 
