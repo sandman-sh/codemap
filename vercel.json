@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "pnpm --filter @codemapai/web build",
-  "outputDirectory": "apps/web/dist",
+  "buildCommand": "pnpm --filter @codemapai/web build && node -e \"require('fs').cpSync('apps/web/dist', 'dist', {recursive: true})\"",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/(.*)",
@@ -10,3 +10,4 @@
     }
   ]
 }
+
