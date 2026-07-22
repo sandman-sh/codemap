@@ -11,4 +11,7 @@ export interface ExplainFlowRequest {
   nodePaths: string[];
   repoName: string;
   repoContext?: string;
+  nodeContents?: (string | undefined)[];
+  sourceUrl?: string;
+  branch?: string;
 }

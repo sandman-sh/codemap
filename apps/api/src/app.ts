@@ -55,7 +55,22 @@ app.use(
     },
   }),
 );
-app.use(cors());
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || "http://localhost:5174,http://127.0.0.1:5174")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(null, false);
+  },
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

@@ -3,7 +3,7 @@ import { Mic, MicOff, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useStore } from '@/store';
 import { useSpeechToText } from '@/hooks/useVoice';
-import { useAskCodebase } from '@codemapai/api-client';
+import { useAskCodebase, useGetLearningPath } from '@codemapai/api-client';
 
 type Command =
   | { type: 'search'; payload: string }
@@ -75,6 +75,7 @@ export function VoiceCommandFab() {
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error'>('info');
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const askMutation = useAskCodebase();
+  const pathMutation = useGetLearningPath();
 
   const showStatus = useCallback(
     (msg: string, type: 'info' | 'success' | 'error' = 'info', duration = 3000) => {
@@ -108,8 +109,20 @@ export function VoiceCommandFab() {
           break;
 
         case 'learning-path':
-          setLearningPathMode(true);
-          showStatus('Learning path activated', 'success');
+          pathMutation.mutate({
+            data: {
+              repoName: repoStructure.repoName,
+              rootNode: repoStructure.rootNode,
+              languages: repoStructure.languages,
+            },
+          }, {
+            onSuccess: (data) => {
+              setLearningPath(data);
+              setLearningPathMode(true);
+              showStatus('Learning path ready', 'success');
+            },
+            onError: () => showStatus('Could not generate learning path', 'error'),
+          });
           break;
 
         case 'dev-mode':
@@ -140,7 +153,7 @@ export function VoiceCommandFab() {
               },
             },
             {
-              onSuccess: () => showStatus('Answer ready in Ask tab', 'success'),
+              onSuccess: (data) => showStatus(data.answer, 'success', 10000),
               onError: () => showStatus('Could not answer. Try again.', 'error'),
             }
           );
@@ -150,7 +163,7 @@ export function VoiceCommandFab() {
           showStatus(`Didn't understand: "${rawText.slice(0, 30)}"`, 'error');
       }
     },
-    [repoStructure, setSearchQuery, setSidePanelTab, setSidePanelOpen, setLearningPathMode, setLearningPath, setDevMode, expandAll, collapseAll, askMutation, showStatus]
+    [repoStructure, setSearchQuery, setSidePanelTab, setSidePanelOpen, setLearningPathMode, setLearningPath, setDevMode, expandAll, collapseAll, askMutation, pathMutation, showStatus]
   );
 
   const { isListening, transcript, startListening, stopListening, isSupported } =

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Copy, Sparkles, Network, ShieldCheck, Wrench, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { apiUrl } from '@/lib/api-url';
 
 function findNodeById(root: CodeNode, id: string): CodeNode | null {
   if (root.id === id) return root;
@@ -51,6 +52,7 @@ export function ExplainTab() {
 
   const [refactorLoading, setRefactorLoading] = useState(false);
   const [refactorResult, setRefactorResult] = useState<RefactorResult | null>(null);
+  const [responseNodeId, setResponseNodeId] = useState<string | null>(null);
 
   const explainMutation = useExplainNode();
 
@@ -75,10 +77,14 @@ export function ExplainTab() {
           nodePath: node.path,
           nodeType: node.type,
           repoName: repoStructure.repoName,
-          repoContext: buildRepoContext(repoStructure)
+          repoContext: buildRepoContext(repoStructure),
+          content: node.content,
+          sourceUrl: repoStructure.sourceUrl,
+          branch: repoStructure.branch,
         }
       }, {
         onSuccess: (data) => {
+          setResponseNodeId(node.id);
           cacheExplanation(node.id, data);
         }
       });
@@ -88,18 +94,20 @@ export function ExplainTab() {
   if (!node) return null;
 
   const isLoading = explainMutation.isPending && !cachedData;
-  const data = cachedData || explainMutation.data;
+  const data = cachedData || (responseNodeId === node.id ? explainMutation.data : undefined);
 
   const runSecurityAudit = async () => {
     setAuditLoading(true);
     try {
-      const res = await fetch('/api/ai/security-audit', {
+      const res = await fetch(apiUrl('/api/ai/security-audit'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
-          code: `${node.name} (${node.path})`,
+          code: node.content,
           filePath: node.path,
           language: node.language || 'TypeScript',
+          sourceUrl: repoStructure?.sourceUrl,
+          branch: repoStructure?.branch,
         }),
       });
 
@@ -124,13 +132,15 @@ export function ExplainTab() {
   const runRefactor = async () => {
     setRefactorLoading(true);
     try {
-      const res = await fetch('/api/ai/refactor', {
+      const res = await fetch(apiUrl('/api/ai/refactor'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
-          code: `${node.name} (${node.path})`,
+          code: node.content,
           filePath: node.path,
           focus: "performance and modern best practices",
+          sourceUrl: repoStructure?.sourceUrl,
+          branch: repoStructure?.branch,
         }),
       });
 

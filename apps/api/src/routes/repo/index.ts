@@ -17,7 +17,13 @@ interface CodeNode {
   size?: number;
   complexity?: "low" | "medium" | "high";
   isEntryPoint?: boolean;
+  content?: string;
 }
+
+const MAX_ARCHIVE_ENTRIES = 10_000;
+const MAX_ARCHIVE_ENTRY_SIZE = 10 * 1024 * 1024;
+const MAX_EMBEDDED_SOURCE_FILE_SIZE = 128 * 1024;
+const MAX_EMBEDDED_SOURCE_TOTAL_SIZE = 2 * 1024 * 1024;
 
 function getLanguage(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
@@ -45,7 +51,7 @@ function isEntryFile(name: string): boolean {
 
 function buildTreeFromPaths(
   repoName: string,
-  files: Array<{ path: string; size: number }>
+  files: Array<{ path: string; size: number; content?: string }>
 ): CodeNode {
   const root: CodeNode = {
     id: "root",
@@ -84,6 +90,7 @@ function buildTreeFromPaths(
           size: isLast ? file.size : undefined,
           complexity: isLast ? getComplexity(file.size) : undefined,
           isEntryPoint: isLast ? isEntryFile(part) : undefined,
+          content: isLast ? file.content : undefined,
         };
         nodeMap.set(newPath, node);
         if (!parentNode.children) parentNode.children = [];
@@ -128,6 +135,30 @@ function getEntryPoints(root: CodeNode): string[] {
   return entries;
 }
 
+function getTotalSize(root: CodeNode): number {
+  let total = 0;
+  function traverse(node: CodeNode) {
+    if (node.type === "file") total += node.size || 0;
+    node.children?.forEach(traverse);
+  }
+  traverse(root);
+  return total;
+}
+
+function buildTreeFromGitHubData(
+  repoName: string,
+  data: { truncated?: boolean; tree: Array<{ path: string; type: string; size?: number }> },
+): CodeNode {
+  if (data.truncated) {
+    throw new Error("GitHub returned a truncated tree. Please choose a smaller repository or branch.");
+  }
+
+  const files = data.tree
+    .filter((f) => f.type === "blob")
+    .map((f) => ({ path: f.path, size: f.size || 0 }));
+  return buildTreeFromPaths(repoName, files);
+}
+
 async function fetchGitHubRepo(url: string, branch?: string): Promise<CodeNode> {
   const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
   if (!match) throw new Error("Invalid GitHub URL");
@@ -152,18 +183,15 @@ async function fetchGitHubRepo(url: string, branch?: string): Promise<CodeNode> 
         headers: { "Accept": "application/vnd.github.v3+json", "User-Agent": "CodeMapAI" },
       });
       if (!masterResponse.ok) throw new Error(`GitHub API error: ${response.status}`);
-      const data = await masterResponse.json() as { tree: Array<{ path: string; type: string; size?: number }> };
-      const files = data.tree.filter((f) => f.type === "blob").map((f) => ({ path: f.path, size: f.size || 0 }));
-      return buildTreeFromPaths(repo, files);
+      const data = await masterResponse.json() as { truncated?: boolean; tree: Array<{ path: string; type: string; size?: number }> };
+      return buildTreeFromGitHubData(repo, data);
     }
-    const data = await fallbackResponse.json() as { tree: Array<{ path: string; type: string; size?: number }> };
-    const files = data.tree.filter((f) => f.type === "blob").map((f) => ({ path: f.path, size: f.size || 0 }));
-    return buildTreeFromPaths(repo, files);
+    const data = await fallbackResponse.json() as { truncated?: boolean; tree: Array<{ path: string; type: string; size?: number }> };
+    return buildTreeFromGitHubData(repo, data);
   }
 
-  const data = await response.json() as { tree: Array<{ path: string; type: string; size?: number }> };
-  const files = data.tree.filter((f) => f.type === "blob").map((f) => ({ path: f.path, size: f.size || 0 }));
-  return buildTreeFromPaths(repo, files);
+  const data = await response.json() as { truncated?: boolean; tree: Array<{ path: string; type: string; size?: number }> };
+  return buildTreeFromGitHubData(repo, data);
 }
 
 router.post("/repo/fetch", async (req, res) => {
@@ -188,13 +216,15 @@ router.post("/repo/fetch", async (req, res) => {
     const fileCount = countFiles(rootNode);
     const entryPoints = getEntryPoints(rootNode);
 
-    res.json({
+      res.json({
       repoName,
       rootNode,
       fileCount,
       languages,
       entryPoints,
-      totalSize: 0,
+      totalSize: getTotalSize(rootNode),
+      sourceUrl: url,
+      branch: branch || "HEAD",
     });
   } catch (err) {
     req.log.error({ err }, "Failed to fetch repo");
@@ -215,9 +245,40 @@ router.post("/repo/upload", upload.single("file"), async (req, res) => {
     const zip = new AdmZip(req.file.buffer);
     const entries = zip.getEntries();
 
+    if (entries.length > MAX_ARCHIVE_ENTRIES) {
+      res.status(400).json({ error: "zip_too_large", message: `ZIP contains too many entries. Maximum is ${MAX_ARCHIVE_ENTRIES}.` });
+      return;
+    }
+
+    let embeddedSize = 0;
     const files = entries
       .filter((e) => !e.isDirectory)
-      .map((e) => ({ path: e.entryName, size: e.header.size || 0 }));
+      .map((e) => {
+        const size = e.header.size || 0;
+        if (size > MAX_ARCHIVE_ENTRY_SIZE) {
+          throw new Error(`ZIP entry exceeds the ${MAX_ARCHIVE_ENTRY_SIZE / (1024 * 1024)} MB file limit.`);
+        }
+
+        const normalizedPath = e.entryName.replace(/\\/g, "/");
+        if (normalizedPath.split("/").some((part) => part === "..")) {
+          throw new Error("ZIP contains an unsafe path.");
+        }
+
+        const extension = path.extname(normalizedPath).toLowerCase();
+        const isText = [
+          ".c", ".cc", ".cpp", ".cs", ".css", ".go", ".h", ".html", ".java", ".js", ".jsx",
+          ".json", ".kt", ".md", ".php", ".py", ".rb", ".rs", ".scss", ".sh", ".sql", ".swift",
+          ".ts", ".tsx", ".txt", ".vue", ".xml", ".yaml", ".yml",
+        ].includes(extension);
+        let content: string | undefined;
+        if (isText && size <= MAX_EMBEDDED_SOURCE_FILE_SIZE && embeddedSize + size <= MAX_EMBEDDED_SOURCE_TOTAL_SIZE) {
+          const data = e.getData();
+          content = data.toString("utf8");
+          embeddedSize += data.length;
+        }
+
+        return { path: normalizedPath, size, content };
+      });
 
     if (files.length === 0) {
       res.status(400).json({ error: "empty_zip", message: "ZIP file appears to be empty" });

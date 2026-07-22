@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { chatModel, openai } from "@codemapai/openai-server";
+import { chatModel, getApiKey, openai } from "@codemapai/openai-server";
 import {
   ExplainNodeBody,
   ExplainFlowBody,
@@ -44,7 +44,63 @@ function aiErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Failed to generate AI response";
 }
 
+function isComplexity(value: unknown): value is "low" | "medium" | "high" {
+  return value === "low" || value === "medium" || value === "high";
+}
+
+function isConfidence(value: unknown): value is "high" | "medium" | "low" {
+  return value === "high" || value === "medium" || value === "low";
+}
+
+function parseGitHubUrl(sourceUrl: string): { owner: string; repo: string } | null {
+  const match = sourceUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/?#]+?)(?:\.git)?(?:[/?#]|$)/i);
+  return match ? { owner: match[1], repo: match[2] } : null;
+}
+
+async function fetchGitHubFileContent(sourceUrl: string, filePath: string, branch?: string): Promise<string> {
+  const repo = parseGitHubUrl(sourceUrl);
+  if (!repo) return "";
+
+  const cleanPath = filePath.replace(/^\/+/, "").split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  if (!cleanPath) return "";
+
+  const ref = encodeURIComponent(branch || "HEAD");
+  const response = await fetch(
+    `https://api.github.com/repos/${repo.owner}/${repo.repo}/contents/${cleanPath}?ref=${ref}`,
+    {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "CodeMapAI" },
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+
+  if (!response.ok) return "";
+  const data = await response.json() as { type?: string; content?: string; encoding?: string };
+  if (data.type !== "file" || !data.content || data.encoding !== "base64") return "";
+  return Buffer.from(data.content.replace(/\s/g, ""), "base64").toString("utf8").slice(0, 12_000);
+}
+
+async function resolveSourceContent(input: {
+  content?: unknown;
+  sourceUrl?: unknown;
+  filePath?: unknown;
+  branch?: unknown;
+}): Promise<string> {
+  if (typeof input.content === "string" && input.content.trim()) {
+    return input.content.slice(0, 12_000);
+  }
+
+  if (typeof input.sourceUrl === "string" && typeof input.filePath === "string") {
+    return fetchGitHubFileContent(input.sourceUrl, input.filePath, typeof input.branch === "string" ? input.branch : undefined);
+  }
+
+  return "";
+}
+
 async function createAiCompletion(prompt: string): Promise<string> {
+  if (!getApiKey()) {
+    throw new Error("OPENROUTER_API_KEY is not configured.");
+  }
+
   try {
     const response = await openai.chat.completions.create({
       model: chatModel,
@@ -73,9 +129,10 @@ router.post("/ai/explain-node", async (req, res) => {
     return;
   }
 
-  const { nodeId, nodeName, nodePath, nodeType, repoName, repoContext, content } = parseResult.data;
+  const { nodeId, nodeName, nodePath, nodeType, repoName, repoContext, content, sourceUrl, branch } = parseResult.data;
 
   try {
+    const sourceContent = await resolveSourceContent({ content, sourceUrl, filePath: nodePath, branch });
     const prompt = `You are a code expert helping developers understand codebases. Analyze this code element and provide a concise, beginner-friendly explanation.
 
 Repository: ${repoName}
@@ -84,7 +141,7 @@ ${repoContext ? `Repo context: ${repoContext}` : ""}
 Node: ${nodeName}
 Path: ${nodePath}
 Type: ${nodeType}
-${content ? `\nContent preview:\n\`\`\`\n${content.slice(0, 2000)}\n\`\`\`` : ""}
+    ${sourceContent ? `\nSource content:\n\`\`\`\n${sourceContent.slice(0, 8000)}\n\`\`\`` : "No source content was available; explain only what can be inferred from the path and repository structure."}
 
 Respond in JSON with this exact structure:
 {
@@ -103,7 +160,7 @@ Respond in JSON with this exact structure:
       what: typeof parsed.what === "string" ? parsed.what : "No explanation available.",
       why: typeof parsed.why === "string" ? parsed.why : "Purpose unclear from context.",
       connections: typeof parsed.connections === "string" ? parsed.connections : "Connections unknown.",
-      complexity: parsed.complexity || "low",
+       complexity: isComplexity(parsed.complexity) ? parsed.complexity : "low",
       tips: stringArray(parsed.tips),
     });
   } catch (err) {
@@ -119,12 +176,25 @@ router.post("/ai/explain-flow", async (req, res) => {
     return;
   }
 
-  const { nodeIds, nodePaths, repoName, repoContext } = parseResult.data;
+  const { nodeIds, nodePaths, repoName, repoContext, nodeContents, sourceUrl, branch } = parseResult.data;
 
   try {
+    const resolvedContents = await Promise.all(nodePaths.slice(0, 6).map((nodePath, index) =>
+      resolveSourceContent({
+        content: nodeContents?.[index],
+        sourceUrl,
+        filePath: nodePath,
+        branch,
+      })
+    ));
+    const sourceContext = resolvedContents
+      .map((content, index) => content ? `\n${nodePaths[index]}:\n\`\`\`\n${content.slice(0, 3000)}\n\`\`\`` : "")
+      .join("");
     const prompt = `You are a code expert. Explain the data flow between these files/modules in the ${repoName} repository.
 
 ${repoContext ? `Repo context: ${repoContext}` : ""}
+
+${sourceContext ? `Selected source content:${sourceContext}` : "No source content was available; infer the flow only from the paths and repository structure."}
 
 Selected nodes (in order):
 ${nodePaths.map((p, i) => `${i + 1}. ${p}`).join("\n")}
@@ -254,7 +324,7 @@ Respond in JSON:
       answer: typeof parsed.answer === "string" ? parsed.answer : "Could not generate an answer.",
       referencedPaths: stringArray(parsed.referencedPaths),
       referencedNodeIds: stringArray(parsed.referencedNodeIds),
-      confidence: typeof parsed.confidence === "string" ? parsed.confidence : "medium",
+      confidence: isConfidence(parsed.confidence) ? parsed.confidence : "medium",
     });
   } catch (err) {
     req.log.error({ err }, "Failed to answer question");
@@ -313,13 +383,19 @@ router.post("/ai/voice/speak", async (req, res) => {
 });
 
 router.post("/ai/security-audit", async (req, res) => {
-  const { code, filePath, language } = req.body || {};
-  if (!code || typeof code !== "string") {
-    res.status(400).json({ error: "validation_error", message: "code string is required" });
+  const { code, filePath, language, sourceUrl, branch } = req.body || {};
+  if ((!code || typeof code !== "string") && (!sourceUrl || !filePath)) {
+    res.status(400).json({ error: "validation_error", message: "code or sourceUrl/filePath is required" });
     return;
   }
 
   try {
+    const sourceCode = await resolveSourceContent({ content: code, sourceUrl, filePath, branch });
+    if (!sourceCode) {
+      res.status(422).json({ error: "source_unavailable", message: "Source code could not be loaded for this file." });
+      return;
+    }
+
     const prompt = `You are a Senior Security Architect and Code Auditor. Analyze the following code for security vulnerabilities, memory leaks, hardcoded secrets, unsafe queries, and performance bottlenecks.
 
 ${filePath ? `File Path: ${filePath}` : ""}
@@ -327,7 +403,7 @@ ${language ? `Language: ${language}` : ""}
 
 Code to audit:
 \`\`\`
-${code.slice(0, 4000)}
+    ${sourceCode.slice(0, 12000)}
 \`\`\`
 
 Respond in JSON with this exact structure:
@@ -362,20 +438,26 @@ Respond in JSON with this exact structure:
 });
 
 router.post("/ai/refactor", async (req, res) => {
-  const { code, filePath, focus } = req.body || {};
-  if (!code || typeof code !== "string") {
-    res.status(400).json({ error: "validation_error", message: "code string is required" });
+  const { code, filePath, focus, sourceUrl, branch } = req.body || {};
+  if ((!code || typeof code !== "string") && (!sourceUrl || !filePath)) {
+    res.status(400).json({ error: "validation_error", message: "code or sourceUrl/filePath is required" });
     return;
   }
 
   try {
+    const sourceCode = await resolveSourceContent({ content: code, sourceUrl, filePath, branch });
+    if (!sourceCode) {
+      res.status(422).json({ error: "source_unavailable", message: "Source code could not be loaded for this file." });
+      return;
+    }
+
     const prompt = `You are an expert Software Engineer. Refactor and modernize the following code snippet. Focus on ${focus || "performance, readability, and modern best practices"}.
 
 ${filePath ? `File Path: ${filePath}` : ""}
 
 Original Code:
 \`\`\`
-${code.slice(0, 4000)}
+    ${sourceCode.slice(0, 12000)}
 \`\`\`
 
 Respond in JSON:
@@ -390,7 +472,7 @@ Respond in JSON:
 
     res.json({
       summary: typeof parsed.summary === "string" ? parsed.summary : "Refactoring complete.",
-      refactoredCode: typeof parsed.refactoredCode === "string" ? parsed.refactoredCode : code,
+       refactoredCode: typeof parsed.refactoredCode === "string" ? parsed.refactoredCode : sourceCode,
       keyImprovements: stringArray(parsed.keyImprovements),
     });
   } catch (err) {

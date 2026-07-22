@@ -236,6 +236,9 @@ components:
           enum: [low, medium, high]
         isEntryPoint:
           type: boolean
+        content:
+          type: string
+          description: Optional source content for small text files
       required:
         - id
         - name
@@ -261,6 +264,11 @@ components:
             type: string
         totalSize:
           type: integer
+        sourceUrl:
+          type: string
+          format: uri
+        branch:
+          type: string
       required:
         - repoName
         - rootNode
@@ -286,6 +294,11 @@ components:
         content:
           type: string
           description: Optional file content to explain
+        sourceUrl:
+          type: string
+          format: uri
+        branch:
+          type: string
       required:
         - nodeId
         - nodeName
@@ -334,6 +347,16 @@ components:
         repoName:
           type: string
         repoContext:
+          type: string
+        nodeContents:
+          type: array
+          items:
+            type: string
+            nullable: true
+        sourceUrl:
+          type: string
+          format: uri
+        branch:
           type: string
       required:
         - nodeIds

@@ -16,4 +16,6 @@ export interface ExplainNodeRequest {
   repoContext?: string;
   /** Optional file content to explain */
   content?: string;
+  sourceUrl?: string;
+  branch?: string;
 }

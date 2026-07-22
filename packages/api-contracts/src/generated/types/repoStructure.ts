@@ -14,4 +14,6 @@ export interface RepoStructure {
   languages: string[];
   entryPoints?: string[];
   totalSize?: number;
+  sourceUrl?: string;
+  branch?: string;
 }

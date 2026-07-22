@@ -18,4 +18,5 @@ export interface CodeNode {
   size?: number;
   complexity?: CodeNodeComplexity;
   isEntryPoint?: boolean;
+  content?: string;
 }

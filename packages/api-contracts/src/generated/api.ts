@@ -39,11 +39,14 @@ export const FetchRepoResponse = zod.object({
     size: zod.number().optional(),
     complexity: zod.enum(["low", "medium", "high"]).optional(),
     isEntryPoint: zod.boolean().optional(),
+    content: zod.string().optional(),
   }),
   fileCount: zod.number(),
   languages: zod.array(zod.string()),
   entryPoints: zod.array(zod.string()).optional(),
   totalSize: zod.number().optional(),
+  sourceUrl: zod.string().optional(),
+  branch: zod.string().optional(),
 });
 
 /**
@@ -66,11 +69,14 @@ export const UploadZipResponse = zod.object({
     size: zod.number().optional(),
     complexity: zod.enum(["low", "medium", "high"]).optional(),
     isEntryPoint: zod.boolean().optional(),
+    content: zod.string().optional(),
   }),
   fileCount: zod.number(),
   languages: zod.array(zod.string()),
   entryPoints: zod.array(zod.string()).optional(),
   totalSize: zod.number().optional(),
+  sourceUrl: zod.string().optional(),
+  branch: zod.string().optional(),
 });
 
 /**
@@ -88,6 +94,8 @@ export const ExplainNodeBody = zod.object({
     .optional()
     .describe("Brief description of the full repo structure for context"),
   content: zod.string().optional().describe("Optional file content to explain"),
+  sourceUrl: zod.string().url().optional(),
+  branch: zod.string().optional(),
 });
 
 export const ExplainNodeResponse = zod.object({
@@ -108,6 +116,9 @@ export const ExplainFlowBody = zod.object({
   nodePaths: zod.array(zod.string()),
   repoName: zod.string(),
   repoContext: zod.string().optional(),
+  nodeContents: zod.array(zod.string().optional()).optional(),
+  sourceUrl: zod.string().url().optional(),
+  branch: zod.string().optional(),
 });
 
 export const ExplainFlowResponse = zod.object({

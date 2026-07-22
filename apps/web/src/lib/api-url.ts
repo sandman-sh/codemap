@@ -11,3 +11,8 @@
 export function getApiBaseUrl(): string {
   return import.meta.env.VITE_API_URL || "";
 }
+
+export function apiUrl(path: string): string {
+  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+  return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}

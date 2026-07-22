@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useStore } from '@/store';
 import { useExplainFlow, CodeNode } from '@codemapai/api-client';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ function findNodeById(root: CodeNode, id: string): CodeNode | null {
 export function FlowTab() {
   const { selectedNodes, repoStructure, flowExplanations, cacheFlowExplanation } = useStore();
   const explainFlowMutation = useExplainFlow();
+  const [responseFlowKey, setResponseFlowKey] = useState<string | null>(null);
 
   if (selectedNodes.length < 2) {
     return (
@@ -42,15 +44,21 @@ export function FlowTab() {
       data: {
         nodeIds: nodes.map(n => n.id),
         nodePaths: nodes.map(n => n.path),
-        repoName: repoStructure.repoName
+        repoName: repoStructure.repoName,
+        nodeContents: nodes.map(n => n.content),
+        sourceUrl: repoStructure.sourceUrl,
+        branch: repoStructure.branch,
       }
     }, {
-      onSuccess: (data) => cacheFlowExplanation(flowKey, data)
+      onSuccess: (data) => {
+        setResponseFlowKey(flowKey);
+        cacheFlowExplanation(flowKey, data);
+      }
     });
   };
 
   const isLoading = explainFlowMutation.isPending;
-  const data = cachedData || explainFlowMutation.data;
+  const data = cachedData || (responseFlowKey === flowKey ? explainFlowMutation.data : undefined);
 
   return (
     <div className="p-6 space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">

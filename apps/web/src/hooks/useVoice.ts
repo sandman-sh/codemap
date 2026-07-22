@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { apiUrl } from '@/lib/api-url';
 
 declare global {
   interface Window {
@@ -114,7 +115,7 @@ export function useTextToSpeech() {
 
       setIsSpeaking(true);
 
-      const response = await fetch('/api/ai/voice/speak', {
+      const response = await fetch(apiUrl('/api/ai/voice/speak'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.slice(0, 800) }),

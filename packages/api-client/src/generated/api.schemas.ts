@@ -51,6 +51,7 @@ export interface CodeNode {
   size?: number;
   complexity?: CodeNodeComplexity;
   isEntryPoint?: boolean;
+  content?: string;
 }
 
 export interface RepoStructure {
@@ -60,6 +61,8 @@ export interface RepoStructure {
   languages: string[];
   entryPoints?: string[];
   totalSize?: number;
+  sourceUrl?: string;
+  branch?: string;
 }
 
 export interface ExplainNodeRequest {
@@ -72,6 +75,8 @@ export interface ExplainNodeRequest {
   repoContext?: string;
   /** Optional file content to explain */
   content?: string;
+  sourceUrl?: string;
+  branch?: string;
 }
 
 export type ExplainNodeResponseComplexity =
@@ -100,6 +105,9 @@ export interface ExplainFlowRequest {
   nodePaths: string[];
   repoName: string;
   repoContext?: string;
+  nodeContents?: (string | undefined)[];
+  sourceUrl?: string;
+  branch?: string;
 }
 
 export interface FlowStep {
