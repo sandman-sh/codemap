@@ -11,7 +11,7 @@
     "dev:api": "pnpm --filter @codemapai/api dev",
     "dev": "pnpm --filter @codemapai/api --filter @codemapai/web --parallel run dev",
     "test": "pnpm -r --if-present run test",
-    "vercel-build": "pnpm build"
+    "vercel-build": "node ./scripts/vercel-build.mjs"
   },
   "private": true,
   "devDependencies": {
