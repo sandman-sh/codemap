@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "pnpm --filter @codemapai/web build && node -e \"require('fs').cpSync('apps/web/dist', 'dist', {recursive: true})\"",
+  "buildCommand": "pnpm --filter @codemapai/web build && node -e \"const f=require('fs'); if(f.existsSync('apps/web/dist')) f.cpSync('apps/web/dist','dist',{recursive:true}); if(f.existsSync('dist')&&!f.existsSync('apps/web/dist')){f.mkdirSync('apps/web',{recursive:true});f.cpSync('dist','apps/web/dist',{recursive:true});}\"",
   "outputDirectory": "dist",
   "rewrites": [
     {
